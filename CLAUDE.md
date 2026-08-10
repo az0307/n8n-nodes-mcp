@@ -33,7 +33,7 @@ npm run format         # Prettier over nodes/ and credentials/
 
 ## Architecture
 
-```
+```text
 nodes/McpClient/
 ├── McpClient.node.ts        # the node implementation (operations, transport, params)
 ├── McpClient.node.test.ts   # node unit tests
