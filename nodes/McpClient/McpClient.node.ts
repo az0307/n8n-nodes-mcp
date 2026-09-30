@@ -20,6 +20,36 @@ declare const process: {
 	env: Record<string, string | undefined>;
 };
 
+/**
+ * Parse NAME=VALUE pairs separated by newlines (preferred) or commas (as documented in the
+ * credential descriptions). Newline-separated input is never split on commas so values may
+ * contain them.
+ */
+export function parseKeyValueList(input: string): Record<string, string> {
+	const result: Record<string, string> = {};
+	const parts = /[\r\n]/.test(input) ? input.split(/\r?\n/) : input.split(',');
+	for (const line of parts) {
+		const equalsIndex = line.indexOf('=');
+		if (equalsIndex > 0) {
+			const name = line.substring(0, equalsIndex).trim();
+			const value = line.substring(equalsIndex + 1).trim();
+			if (name) result[name] = value;
+		}
+	}
+	return result;
+}
+
+/** Strip query string / credentials from a URL so it is safe to log. */
+function redactUrl(raw: string): string {
+	try {
+		const u = new URL(raw);
+		return `${u.protocol}//${u.host}${u.pathname}`;
+	} catch {
+		return '[invalid url]';
+	}
+}
+
+
 export class McpClient implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'MCP Client',
@@ -225,22 +255,7 @@ export class McpClient implements INodeType {
 				timeout = httpCredentials.httpTimeout as number || 60000;
 
 				// Parse headers
-				let headers: Record<string, string> = {};
-				if (httpCredentials.headers) {
-					const headerLines = (httpCredentials.headers as string).split('\n');
-					for (const line of headerLines) {
-						const equalsIndex = line.indexOf('=');
-						// Ensure '=' is present and not the first character of the line
-						if (equalsIndex > 0) {
-							const name = line.substring(0, equalsIndex).trim();
-							const value = line.substring(equalsIndex + 1).trim();
-							// Add to headers object if key is not empty and value is defined
-							if (name && value !== undefined) {
-								headers[name] = value;
-							}
-						}
-					}
-				}
+				const headers = parseKeyValueList((httpCredentials.headers as string) || '');
 
 				const requestInit: RequestInit = { headers };
 				if (messagesPostEndpoint) {
@@ -263,22 +278,7 @@ export class McpClient implements INodeType {
 				timeout = sseCredentials.sseTimeout as number || 60000;
 
 				// Parse headers
-				let headers: Record<string, string> = {};
-				if (sseCredentials.headers) {
-					const headerLines = (sseCredentials.headers as string).split('\n');
-					for (const line of headerLines) {
-						const equalsIndex = line.indexOf('=');
-						// Ensure '=' is present and not the first character of the line
-						if (equalsIndex > 0) {
-							const name = line.substring(0, equalsIndex).trim();
-							const value = line.substring(equalsIndex + 1).trim();
-							// Add to headers object if key is not empty and value is defined
-							if (name && value !== undefined) {
-								headers[name] = value;
-							}
-						}
-					}
-				}
+				const headers = parseKeyValueList((sseCredentials.headers as string) || '');
 
 				// Create SSE transport with dynamic import to avoid TypeScript errors
 				transport = new SSEClientTransport(
@@ -300,9 +300,9 @@ export class McpClient implements INodeType {
 					},
 				);
 
-				this.logger.debug(`Created SSE transport for MCP client URL: ${sseUrl}`);
+				this.logger.debug(`Created SSE transport for MCP client URL: ${redactUrl(sseUrl)}`);
 				if (messagesPostEndpoint) {
-					this.logger.debug(`Using custom POST endpoint: ${messagesPostEndpoint}`);
+					this.logger.debug(`Using custom POST endpoint: ${redactUrl(messagesPostEndpoint)}`);
 				}
 			} else {
 				// Use stdio transport (default)
@@ -314,23 +314,9 @@ export class McpClient implements INodeType {
 					PATH: process.env.PATH || '',
 				};
 
-				this.logger.debug(`Original PATH: ${process.env.PATH}`);
 
-				// Parse newline-separated environment variables from credentials
 				if (cmdCredentials.environments) {
-					const envLines = (cmdCredentials.environments as string).split('\n');
-					for (const line of envLines) {
-						const equalsIndex = line.indexOf('=');
-						// Ensure '=' is present and not the first character of the line
-						if (equalsIndex > 0) {
-							const name = line.substring(0, equalsIndex).trim();
-							const value = line.substring(equalsIndex + 1).trim();
-							// Add to env object if key is not empty and value is defined
-							if (name && value !== undefined) {
-								env[name] = value;
-							}
-						}
-					}
+					Object.assign(env, parseKeyValueList(cmdCredentials.environments as string));
 				}
 
 				// Process environment variables from Node.js
@@ -352,7 +338,7 @@ export class McpClient implements INodeType {
 
 				// Use n8n's logger instead of console.log
 				this.logger.debug(
-					`Transport created for MCP client command: ${cmdCredentials.command}, PATH: ${env.PATH}`,
+					`Transport created for MCP client command: ${cmdCredentials.command}`,
 				);
 			}
 
@@ -534,7 +520,6 @@ export class McpClient implements INodeType {
 
 					try {
 						const rawParams = this.getNodeParameter('toolParameters', 0);
-						this.logger.debug(`Raw tool parameters: ${JSON.stringify(rawParams)}`);
 
 						// Handle different parameter types
 						if (rawParams === undefined || rawParams === null) {
@@ -606,7 +591,7 @@ export class McpClient implements INodeType {
 							arguments: toolParams,
 						}, CallToolResultSchema, requestOptions);
 
-						this.logger.debug(`Tool executed successfully: ${JSON.stringify(result)}`);
+						this.logger.debug('Tool executed successfully');
 
 						returnData.push({
 							json: { result },

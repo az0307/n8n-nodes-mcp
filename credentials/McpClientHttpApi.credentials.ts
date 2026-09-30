@@ -36,6 +36,7 @@ export class McpClientHttpApi implements ICredentialType {
 			name: 'headers',
 			type: 'string',
 			default: '',
+			typeOptions: { password: true },
 			description: 'Additional headers to send in the request in NAME=VALUE format, separated by commas (e.g., BRAVE_API_KEY=xyz,OPENAI_API_KEY=abc)',
 		},
 	];
